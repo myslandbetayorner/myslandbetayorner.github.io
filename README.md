@@ -1,1 +1,0 @@
-# myslandbetayorner.github.io
