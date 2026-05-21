@@ -1,0 +1,566 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>MySland — Админ, серверы, миникарта</title>
+    <style>
+        body { margin: 0; display: flex; height: 100vh; background: #000; font-family: 'Segoe UI', sans-serif; overflow: hidden; color: white; }
+        #game-area { position: relative; flex-grow: 1; height: 100vh; display: none; }
+        canvas { display: block; width: 100%; height: 100%; }
+
+        #auth-screen, #admin-code-screen, #menu-screen, #server-form, #setup-screen { position: absolute; width: 100%; height: 100%; background: radial-gradient(circle, #1a3a5c, #0a1120); display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 100; }
+        h1, h2 { color: #f0c040; text-shadow: 0 0 20px #ffaa00; }
+        .btn { padding: 12px 32px; margin: 6px; font-size: 18px; font-weight: bold; background: #fbbf24; border: none; border-radius: 30px; cursor: pointer; color: #1e293b; transition: 0.2s; }
+        .btn:hover { transform: scale(1.05); box-shadow: 0 4px 15px rgba(255,200,0,0.5); }
+        input, select { padding: 10px; border-radius: 8px; border: none; background: #1e293b; color: white; font-size: 16px; margin: 6px; width: 220px; }
+        .error { color: #f87171; margin-top: 10px; }
+        #color-picker { display: flex; gap: 8px; margin: 10px 0; }
+        .color-option { width: 30px; height: 30px; border-radius: 50%; cursor: pointer; border: 3px solid transparent; transition: 0.2s; }
+        .color-option.selected { border-color: #fbbf24; box-shadow: 0 0 10px #fbbf24; }
+
+        .panel { background: rgba(15, 23, 42, 0.85); border: 1px solid rgba(255,255,255,0.15); border-radius: 12px; pointer-events: all; backdrop-filter: blur(10px); }
+        #ui-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 10; }
+        #settings-btn { position: absolute; top: 180px; right: 20px; width: 45px; height: 45px; font-size: 24px; display: flex; align-items: center; justify-content: center; cursor: pointer; }
+        #settings-window { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 320px; padding: 20px; display: none; flex-direction: column; gap: 15px; z-index: 2000; }
+
+        #console-wrap { position: absolute; bottom: 40px; left: 20px; width: 400px; display: none; flex-direction: column; pointer-events: all; z-index: 1000; }
+        #console-input { background: rgba(0,0,0,0.9); border: 2px solid #fbbf24; color: #fbbf24; padding: 12px; border-radius: 8px; outline: none; font-family: monospace; width: 100%; box-sizing: border-box; }
+        #console-hints { color: #aaa; font-size: 12px; margin-top: 4px; min-height: 16px; }
+        #chat-messages { position: absolute; bottom: 80px; left: 20px; width: 400px; max-height: 150px; overflow-y: auto; pointer-events: all; font-size: 14px; color: white; background: rgba(0,0,0,0.5); border-radius: 8px; padding: 6px; }
+
+        #craft-btn { position: absolute; top: 20px; left: 20px; width: 55px; height: 55px; font-size: 28px; display: flex; align-items: center; justify-content: center; cursor: pointer; }
+        #craft-window { position: absolute; top: 85px; left: 20px; width: 260px; padding: 12px; display: none; flex-direction: column; gap: 6px; overflow-y: auto; max-height: 400px; }
+        .recipe { display: flex; justify-content: space-between; align-items: center; }
+        .recipe button { padding: 4px 12px; background: #fbbf24; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; }
+
+        #minimap { position: absolute; top: 20px; right: 20px; width: 150px; height: 150px; border: 3px solid #334155; border-radius: 10px; overflow: hidden; background: #60a5fa; }
+        #info-panel { position: absolute; top: 20px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,0.7); padding: 8px 16px; border-radius: 20px; font-size: 14px; display: flex; gap: 20px; }
+        #info-panel span { color: #fbbf24; }
+
+        #sidebar { width: 100px; background: #0f172a; border-left: 2px solid #1e293b; display: flex; flex-direction: column; align-items: center; padding: 15px 0; gap: 8px; overflow-y: auto; }
+        .slot { width: 60px; height: 60px; background: #1e293b; border: 1px solid #334155; border-radius: 10px; display: none; align-items: center; justify-content: center; font-size: 24px; position: relative; }
+        .slot.visible { display: flex; }
+        .num { position: absolute; bottom: 2px; right: 4px; font-size: 11px; color: #fbbf24; font-weight: bold; }
+    </style>
+</head>
+<body>
+
+<!-- Экраны -->
+<div id="auth-screen">
+    <h1>MySland</h1>
+    <input type="text" id="auth-nick" placeholder="Ник" maxlength="20">
+    <input type="password" id="auth-pass" placeholder="Пароль">
+    <div>
+        <button class="btn" onclick="register()">Регистрация</button>
+        <button class="btn" onclick="login()">Войти</button>
+    </div>
+    <div id="auth-error" class="error"></div>
+</div>
+
+<div id="admin-code-screen" style="display:none;">
+    <h2>Код администратора</h2>
+    <input type="password" id="admin-code-input" placeholder="Введите код">
+    <button class="btn" onclick="verifyAdminCode()">Подтвердить</button>
+    <div id="admin-code-error" class="error"></div>
+</div>
+
+<div id="menu-screen" style="display:none;">
+    <h1>Главное меню</h1>
+    <button class="btn" onclick="openSetup('single')">Одиночная игра</button>
+    <button class="btn" onclick="openSetup('multiplayer')">Многопользовательская игра</button>
+    <button class="btn" onclick="requestServerCode()">Добавить сервер</button>
+    <button class="btn" onclick="logout()" style="background:#64748b;">Выйти</button>
+</div>
+
+<div id="server-code-screen" style="display:none; position:absolute; width:100%; height:100%; background:rgba(0,0,0,0.8); flex-direction:column; align-items:center; justify-content:center; z-index:200;">
+    <h2>Введите код для создания сервера</h2>
+    <input type="password" id="server-code-input" placeholder="Код">
+    <button class="btn" onclick="verifyServerCode()">Подтвердить</button>
+    <button class="btn" onclick="closeServerCode()" style="background:#64748b;">Отмена</button>
+    <div id="server-code-error" class="error"></div>
+</div>
+
+<div id="server-form" style="display:none;">
+    <h2>Создать сервер</h2>
+    <select id="server-preset" onchange="toggleServerFields()">
+        <option value="default">myslandbetayorner.github.io</option>
+        <option value="custom">Свой IP</option>
+    </select>
+    <div id="custom-server-fields" style="display:none;">
+        <input type="text" id="server-ip" placeholder="IP адрес">
+        <input type="text" id="server-port" placeholder="Порт">
+    </div>
+    <div id="default-port-info">Порт: <span id="random-port"></span></div>
+    <button class="btn" onclick="confirmServer()">Создать</button>
+    <button class="btn" onclick="closeServerForm()" style="background:#64748b;">Назад</button>
+</div>
+
+<div id="setup-screen" style="display:none;">
+    <h1>Настройка мира</h1>
+    <div style="display:flex; gap:20px; flex-wrap:wrap; justify-content:center;">
+        <div>
+            <label>Игровой режим</label>
+            <select id="player-mode">
+                <option value="survival">Только выживание</option>
+                <option value="creative">Только креатив</option>
+                <option value="free">Свободный</option>
+            </select>
+        </div>
+        <div>
+            <label>Ландшафт</label>
+            <select id="biome-preset">
+                <option value="islands">Острова (много воды)</option>
+                <option value="mixed">Смешанный</option>
+                <option value="low_water">Мало океана</option>
+                <option value="beach_world">Бескрайний пляж</option>
+            </select>
+        </div>
+    </div>
+    <div id="color-picker">
+        <div class="color-option" style="background:#f97316;" onclick="selectColor('#f97316', this)"></div>
+        <div class="color-option" style="background:#ef4444;" onclick="selectColor('#ef4444', this)"></div>
+        <div class="color-option" style="background:#3b82f6;" onclick="selectColor('#3b82f6', this)"></div>
+        <div class="color-option" style="background:#22c55e;" onclick="selectColor('#22c55e', this)"></div>
+        <div class="color-option" style="background:#a855f7;" onclick="selectColor('#a855f7', this)"></div>
+        <div class="color-option" style="background:#ec4899;" onclick="selectColor('#ec4899', this)"></div>
+        <div class="color-option" style="background:#eab308;" onclick="selectColor('#eab308', this)"></div>
+        <div class="color-option" style="background:#ffffff;" onclick="selectColor('#ffffff', this)"></div>
+    </div>
+    <button class="btn" onclick="startGame()">ИГРАТЬ</button>
+    <button class="btn" onclick="backToMenu()" style="background:#64748b;">Назад</button>
+</div>
+
+<div id="game-area">
+    <canvas id="game"></canvas>
+    <div id="ui-layer">
+        <div id="info-panel">
+            <span id="coords">X: 0 Y: 0</span>
+            <span id="biome-name">Биом: ?</span>
+        </div>
+        <div id="chat-messages"></div>
+        <div id="craft-btn" class="panel" onclick="toggleCraft()">🛠</div>
+        <div id="minimap" class="panel"><canvas id="m-canvas" width="150" height="150"></canvas></div>
+        <div id="settings-btn" class="panel" onclick="toggleSettings()">⚙️</div>
+        <div id="settings-window" class="panel">
+            <h2 style="margin:0 0 10px; color:#fbbf24">Настройки</h2>
+            <div class="setting-row"><span>Музыка</span><input type="checkbox" id="music-toggle" checked onchange="updateAudio()"></div>
+            <div class="setting-row"><span>Звуки</span><input type="checkbox" id="sound-toggle" checked></div>
+            <div>Трек: <select id="music-select" onchange="changeTrack()" style="background:#1e293b; color:white; border:1px solid #444; padding:5px; width:100%;"></select></div>
+            <div><input type="file" id="music-upload" accept="audio/*" multiple style="display:none;"><button onclick="document.getElementById('music-upload').click()" style="width:100%; padding:8px; background:#334155; border:none; color:white; border-radius:5px; cursor:pointer;">📂 Загрузить mp3</button></div>
+            <button onclick="toggleSettings()" style="margin-top:10px; padding:10px; background:#fbbf24; border:none; border-radius:5px; font-weight:bold; cursor:pointer;">Закрыть</button>
+        </div>
+        <div id="craft-window" class="panel"><h3 style="margin:0 0 8px; color:#fbbf24">Crafting</h3><div id="recipes-list"></div></div>
+        <div id="console-wrap"><input type="text" id="console-input" autocomplete="off" placeholder="Введите команду или сообщение..."><div id="console-hints"></div></div>
+    </div>
+</div>
+
+<div id="sidebar"></div>
+
+<script>
+// ========== ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ ==========
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+const mCanvas = document.getElementById('m-canvas');
+const mctx = mCanvas.getContext('2d');
+const cInput = document.getElementById('console-input');
+
+let playerName = '', playerColor = '#f97316', isAdmin = false;
+let gameMode = 'single', playerMode = 'survival', worldPreset = 'islands';
+let player = { x: 2500, y: 2500, speed: 5.5, mode: 'survival', inv: { wood:0, flax:0, stone:0, meat:0, thread:0, rope:0, axe:0, campfire:0, fishing_rod:0, sail:0, tent:0, torch:0, boat:0 } };
+let worldSize = 5000, resources = [], animals = [], keys = {}, seed = Math.random(), time = 0;
+let audioCtx = null, musicElement = new Audio(), availableTracks = [];
+let legPhase = 0, breathPhase = 0;
+let otherPlayers = {};
+let currentServer = 'myslandbetayorner.github.io';
+
+// ========== АДМИН-ПАРОЛИ ==========
+const ADMIN_PASSWORDS = ['1234','123456','1234578','123456789','1379','13795','139742685','11397426850','139742680','1379548620'];
+const SECRET_CODE = 'yorner';
+
+// ========== РЕГИСТРАЦИЯ / ВХОД ==========
+function getUsers() { return JSON.parse(localStorage.getItem('mysland_users') || '{}'); }
+function saveUsers(u) { localStorage.setItem('mysland_users', JSON.stringify(u)); }
+function showError(id, msg) { document.getElementById(id).innerText = msg; }
+
+function register() {
+    const nick = document.getElementById('auth-nick').value.trim();
+    const pass = document.getElementById('auth-pass').value.trim();
+    if (!nick || !pass) return showError('auth-error', 'Введите ник и пароль');
+    if (nick === '@admin') return showError('auth-error', 'Имя зарезервировано');
+    const users = getUsers();
+    if (users[nick]) return showError('auth-error', 'Ник занят');
+    users[nick] = pass;
+    saveUsers(users);
+    playerName = nick;
+    showMenu();
+}
+
+function login() {
+    const nick = document.getElementById('auth-nick').value.trim();
+    const pass = document.getElementById('auth-pass').value.trim();
+    if (nick === '@admin') {
+        if (ADMIN_PASSWORDS.includes(pass)) {
+            playerName = '@admin';
+            document.getElementById('auth-screen').style.display = 'none';
+            document.getElementById('admin-code-screen').style.display = 'flex';
+        } else showError('auth-error', 'Неверный пароль администратора');
+        return;
+    }
+    const users = getUsers();
+    if (!users[nick] || users[nick] !== pass) return showError('auth-error', 'Неверный ник или пароль');
+    playerName = nick;
+    showMenu();
+}
+
+function verifyAdminCode() {
+    const code = document.getElementById('admin-code-input').value.trim().toLowerCase();
+    if (code === SECRET_CODE) {
+        isAdmin = true;
+        document.getElementById('admin-code-screen').style.display = 'none';
+        showMenu();
+    } else {
+        showError('admin-code-error', 'Неверный код');
+    }
+}
+
+function showMenu() {
+    document.getElementById('auth-screen').style.display = 'none';
+    document.getElementById('admin-code-screen').style.display = 'none';
+    document.getElementById('menu-screen').style.display = 'flex';
+}
+
+function logout() {
+    playerName = ''; isAdmin = false;
+    document.getElementById('menu-screen').style.display = 'none';
+    document.getElementById('auth-screen').style.display = 'flex';
+    document.getElementById('auth-nick').value = '';
+    document.getElementById('auth-pass').value = '';
+}
+
+// ========== СЕРВЕРЫ ==========
+function requestServerCode() {
+    document.getElementById('server-code-screen').style.display = 'flex';
+    document.getElementById('server-code-input').value = '';
+    showError('server-code-error', '');
+}
+function closeServerCode() {
+    document.getElementById('server-code-screen').style.display = 'none';
+}
+function verifyServerCode() {
+    if (document.getElementById('server-code-input').value.trim().toLowerCase() === SECRET_CODE) {
+        document.getElementById('server-code-screen').style.display = 'none';
+        document.getElementById('menu-screen').style.display = 'none';
+        document.getElementById('server-form').style.display = 'flex';
+        document.getElementById('random-port').innerText = Math.floor(3000 + Math.random() * 1000);
+    } else {
+        showError('server-code-error', 'Неверный код');
+    }
+}
+function toggleServerFields() {
+    document.getElementById('custom-server-fields').style.display = 
+        document.getElementById('server-preset').value === 'custom' ? 'block' : 'none';
+    document.getElementById('default-port-info').style.display = 
+        document.getElementById('server-preset').value === 'custom' ? 'none' : 'block';
+}
+function confirmServer() {
+    const preset = document.getElementById('server-preset').value;
+    if (preset === 'default') {
+        currentServer = `myslandbetayorner.github.io:${document.getElementById('random-port').innerText}`;
+    } else {
+        currentServer = `${document.getElementById('server-ip').value}:${document.getElementById('server-port').value}`;
+    }
+    alert(`Сервер создан: ${currentServer}\n(мультиплеер работает локально)`);
+    document.getElementById('server-form').style.display = 'none';
+    showMenu();
+}
+function closeServerForm() {
+    document.getElementById('server-form').style.display = 'none';
+    showMenu();
+}
+
+// ========== НАСТРОЙКА ИГРЫ ==========
+function openSetup(mode) {
+    gameMode = mode;
+    document.getElementById('menu-screen').style.display = 'none';
+    document.getElementById('setup-screen').style.display = 'flex';
+}
+function backToMenu() {
+    document.getElementById('setup-screen').style.display = 'none';
+    showMenu();
+}
+function selectColor(color, el) {
+    playerColor = color;
+    document.querySelectorAll('.color-option').forEach(o => o.classList.remove('selected'));
+    if (el) el.classList.add('selected');
+}
+
+// ========== АУДИО ==========
+async function checkLocalTracks() {
+    availableTracks = [];
+    for (let i=1; i<=20; i++) {
+        try { if ((await fetch(`music${i}.mp3`,{method:'HEAD'})).ok) availableTracks.push({name:`Music ${i}`,src:`music${i}.mp3`}); } catch(e){}
+    }
+    updateTrackList();
+}
+function handleFileUpload(e) {
+    for (let f of e.target.files) if (f.type.startsWith('audio/')) availableTracks.push({name:f.name.replace(/\.[^/.]+$/,''),src:URL.createObjectURL(f)});
+    updateTrackList();
+}
+function updateTrackList() {
+    const sel = document.getElementById('music-select');
+    sel.innerHTML = availableTracks.length ? '' : '<option disabled>Нет треков</option>';
+    availableTracks.forEach((t,i) => { const o=document.createElement('option'); o.value=i; o.textContent=t.name; sel.appendChild(o); });
+    if (availableTracks.length) changeTrack();
+}
+function updateAudio() { document.getElementById('music-toggle').checked ? musicElement.play().catch(()=>{}) : musicElement.pause(); }
+function changeTrack() {
+    const idx = document.getElementById('music-select').value;
+    if (availableTracks[idx]) { musicElement.src=availableTracks[idx].src; musicElement.loop=true; updateAudio(); }
+}
+function playSound(freq,type='sine',dur=0.1,vol=0.1) {
+    if (!document.getElementById('sound-toggle')?.checked || !audioCtx) return;
+    const o=audioCtx.createOscillator(), g=audioCtx.createGain();
+    o.type=type; o.frequency.value=freq; g.gain.setValueAtTime(vol,audioCtx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001,audioCtx.currentTime+dur);
+    o.connect(g); g.connect(audioCtx.destination); o.start(); o.stop(audioCtx.currentTime+dur);
+}
+
+// ========== ГЕНЕРАЦИЯ МИРА ==========
+function getBiomeInfo(x,y) {
+    let v = Math.sin(x/600+seed*10)+Math.cos(y/600+seed*5)+Math.sin(x/1200)*Math.cos(y/1200);
+    let d = Math.hypot(x-2500,y-2500)/2200;
+    let th = -0.2;
+    if (worldPreset==='islands') th=0.0;
+    else if (worldPreset==='low_water') th=-0.8;
+    else if (worldPreset==='beach_world') { th=-0.1; d*=0.3; }
+    return v-d;
+}
+function getBiomeColor(val) {
+    const o={r:0x60,g:0xa5,b:0xfa}, b={r:0xea,g:0xb3,b:0x08}, f={r:0x15,g:0x80,b:0x3d};
+    if (val<-0.2) return o;
+    if (val<0) return lerpColor(o,b,(val+0.2)/0.2);
+    if (val<0.2) return lerpColor(b,f,val/0.2);
+    return f;
+}
+function lerpColor(c1,c2,t){ return {r:Math.round(c1.r+(c2.r-c1.r)*t),g:Math.round(c1.g+(c2.g-c1.g)*t),b:Math.round(c1.b+(c2.b-c1.b)*t)}; }
+function getBiomeName(val) { return val<-0.2?'Океан':val<0?'Пляж':'Лес'; }
+function isWater(val) { return val<-0.2; }
+
+function spawnWorld() {
+    for(let i=0;i<1000;i++) { let rx=1000+Math.random()*3000,ry=1000+Math.random()*3000; if(!isWater(getBiomeInfo(rx,ry))){player.x=rx;player.y=ry;break;} }
+    for(let i=0;i<500;i++) { let rx=Math.random()*worldSize,ry=Math.random()*worldSize; if(!isWater(getBiomeInfo(rx,ry))) resources.push({x:rx,y:ry,t:getBiomeInfo(rx,ry)<0?'stone':'wood'}); }
+    for(let i=0;i<15;i++) { let rx=Math.random()*worldSize,ry=Math.random()*worldSize; if(!isWater(getBiomeInfo(rx,ry))) animals.push({x:rx,y:ry,t:Math.random()<0.4?'tiger':'giraffe'}); }
+}
+
+// ========== ИНТЕРФЕЙС ==========
+function updateUI() {
+    for(let k in player.inv) {
+        const el=document.getElementById('inv-'+k), s=document.getElementById('slot-'+k);
+        if(el) el.innerText = player.inv[k];
+        if(s) player.inv[k]>0 ? s.classList.add('visible') : s.classList.remove('visible');
+    }
+    document.getElementById('coords').innerText = `X: ${Math.round(player.x)} Y: ${Math.round(player.y)}`;
+    document.getElementById('biome-name').innerText = `Биом: ${getBiomeName(getBiomeInfo(player.x,player.y))}`;
+}
+function toggleSettings() { const w=document.getElementById('settings-window'); w.style.display = w.style.display==='flex'?'none':'flex'; }
+function toggleCraft() {
+    const w=document.getElementById('craft-window');
+    w.style.display = w.style.display==='flex'?'none':'flex';
+    if (w.style.display==='flex') document.getElementById('recipes-list').innerHTML = `
+        <div><b>Материалы</b></div>
+        <div class="recipe">🧵 Нить (1🌿→2) <button onclick="craft('thread',{flax:1},2)">Создать</button></div>
+        <div class="recipe">🪢 Верёвка (2🧵→1) <button onclick="craft('rope',{thread:2},1)">Создать</button></div>
+        <div><b>Инструменты</b></div>
+        <div class="recipe">🪓 Топор (2🌲+1🗿) <button onclick="craft('axe',{wood:2,stone:1},1)">Создать</button></div>
+        <div class="recipe">🎣 Удочка (2🌲+1🪢) <button onclick="craft('fishing_rod',{wood:2,rope:1},1)">Создать</button></div>
+        <div><b>Предметы</b></div>
+        <div class="recipe">🔥 Костёр (2🌲+1🧵) <button onclick="craft('campfire',{wood:2,thread:1},1)">Создать</button></div>
+        <div class="recipe">⛵ Парус (4🌿+2🪢) <button onclick="craft('sail',{flax:4,rope:2},1)">Создать</button></div>
+        <div class="recipe">🏕️ Палатка (4🌲+2🪢) <button onclick="craft('tent',{wood:4,rope:2},1)">Создать</button></div>
+        <div class="recipe">🔦 Факел (1🌲+1🌿) <button onclick="craft('torch',{wood:1,flax:1},1)">Создать</button></div>
+        <div class="recipe">🚣 Лодка (10🌲) <button onclick="craft('boat',{wood:10},1)">Создать</button></div>
+    `;
+}
+function craft(id,cost,amount=1) {
+    for(let k in cost) if(!player.inv[k]||player.inv[k]<cost[k]) return;
+    for(let k in cost) player.inv[k]-=cost[k];
+    player.inv[id]+=amount;
+    playSound(800,'sine',0.3); updateUI();
+}
+
+// ========== ЧАТ И КОМАНДЫ ==========
+function sendChat(msg) {
+    if (msg.startsWith('/')) executeCommand(msg);
+    else addChatMessage(playerName+': '+msg);
+}
+function addChatMessage(txt) {
+    const d=document.createElement('div'); d.innerText=txt;
+    document.getElementById('chat-messages').appendChild(d);
+    document.getElementById('chat-messages').scrollTop = 9999;
+}
+function executeCommand(cmd) {
+    const p=cmd.trim().split(/\s+/);
+    if (p[0]==='/tp'&&p[1]==='biome') {
+        let tv = p[2]==='ocean'?-0.5:p[2]==='beach'?-0.1:0.3;
+        for(let i=0;i<100;i++) { let rx=Math.random()*worldSize,ry=Math.random()*worldSize; if((tv===-0.5&&getBiomeInfo(rx,ry)<-0.2)||(tv===-0.1&&getBiomeInfo(rx,ry)>=-0.2&&getBiomeInfo(rx,ry)<0)||(tv===0.3&&getBiomeInfo(rx,ry)>=0)) { player.x=rx; player.y=ry; break; } }
+    } else if (p[0]==='/tp'&&p[1]==='coord') { player.x=parseInt(p[2]); player.y=parseInt(p[3]); }
+    else if (p[0]==='/creative') player.mode='creative';
+    else if (p[0]==='/survival') player.mode='survival';
+    else if (p[0]==='/give') player.inv[p[1]]+=parseInt(p[2]);
+    else if (p[0]==='/spawn') animals.push({x:player.x+50,y:player.y+50,t:p[1]});
+    else if (p[0]==='/clear') for(let k in player.inv) player.inv[k]=0;
+}
+
+// ========== ОТРИСОВКА ==========
+function drawTiger(x,y) {
+    ctx.save(); ctx.translate(x,y);
+    ctx.fillStyle='#e07b39'; ctx.fillRect(-12,-8,24,18);
+    ctx.fillStyle='#333'; ctx.fillRect(-10,-8,4,2); ctx.fillRect(2,-8,4,2); ctx.fillRect(-12,0,24,4);
+    ctx.restore();
+}
+function drawGiraffe(x,y) {
+    ctx.save(); ctx.translate(x,y);
+    ctx.fillStyle='#d4a52c'; ctx.fillRect(-6,-20,12,24);
+    ctx.fillStyle='#8b5a2b'; ctx.fillRect(-3,-18,3,3); ctx.fillRect(3,-14,3,3);
+    ctx.fillStyle='#d4a52c'; ctx.fillRect(-10,-6,6,16); ctx.fillRect(4,-6,6,16);
+    ctx.fillRect(-6,-24,4,6); ctx.fillRect(2,-24,4,6);
+    ctx.fillStyle='#333'; ctx.fillRect(-4,-26,2,2); ctx.fillRect(2,-26,2,2);
+    ctx.restore();
+}
+
+function drawMinimap() {
+    mctx.clearRect(0,0,150,150);
+    const step = 3;
+    for(let x=0; x<150; x+=step) {
+        for(let y=0; y<150; y+=step) {
+            const wx = (x/150)*worldSize, wy = (y/150)*worldSize;
+            const col = getBiomeColor(getBiomeInfo(wx,wy));
+            mctx.fillStyle = `rgb(${col.r},${col.g},${col.b})`;
+            mctx.fillRect(x,y,step,step);
+        }
+    }
+    // игрок
+    const px = (player.x/worldSize)*150, py = (player.y/worldSize)*150;
+    mctx.fillStyle = 'red'; mctx.fillRect(px-2, py-2, 4, 4);
+    // другие игроки
+    for (let nick in otherPlayers) {
+        const op = otherPlayers[nick];
+        mctx.fillStyle = op.color;
+        mctx.fillRect((op.x/worldSize)*150-1, (op.y/worldSize)*150-1, 3, 3);
+    }
+}
+
+function loop() {
+    time += 0.016;
+    let nx = player.x, ny = player.y, mv = false;
+    if (document.activeElement !== cInput) {
+        if(keys['KeyW']){ ny-=player.speed; mv=true; }
+        if(keys['KeyS']){ ny+=player.speed; mv=true; }
+        if(keys['KeyA']){ nx-=player.speed; mv=true; }
+        if(keys['KeyD']){ nx+=player.speed; mv=true; }
+    }
+    if(mv) legPhase += 0.25;
+    breathPhase += 0.03;
+    const val = getBiomeInfo(nx,ny);
+    if(player.mode==='creative' || !isWater(val) || player.inv.boat>0) { player.x=nx; player.y=ny; if(mv) playSound(200,'square',0.03,0.03); }
+    for(let i=resources.length-1; i>=0; i--) if(Math.hypot(player.x-resources[i].x,player.y-resources[i].y)<30) { player.inv[resources[i].t]++; resources.splice(i,1); updateUI(); }
+    for(let i=animals.length-1; i>=0; i--) {
+        let a=animals[i];
+        if(a.t==='tiger' && Math.hypot(player.x-a.x,player.y-a.y)<200) { a.x+=(player.x-a.x)*0.01; a.y+=(player.y-a.y)*0.01; }
+        if(keys['KeyF'] && Math.hypot(player.x-a.x,player.y-a.y)<50) { player.inv.meat++; animals.splice(i,1); updateUI(); }
+    }
+    let night = Math.max(0, Math.sin(time/300)*0.8);
+    let cx = player.x-canvas.width/2, cy = player.y-canvas.height/2;
+    // небо
+    ctx.fillStyle = `rgb(${Math.round(135*(1-night)+10*night)},${Math.round(206*(1-night)+10*night)},${Math.round(235*(1-night)+46*night)})`;
+    ctx.fillRect(0,0,canvas.width,canvas.height);
+    // мир (мелкая сетка 5 пикселей)
+    const step = 5;
+    for(let x=Math.floor(cx/step)*step; x<cx+canvas.width+step; x+=step) {
+        for(let y=Math.floor(cy/step)*step; y<cy+canvas.height+step; y+=step) {
+            const col = getBiomeColor(getBiomeInfo(x,y));
+            ctx.fillStyle = `rgb(${col.r},${col.g},${col.b})`;
+            ctx.fillRect(x-cx, y-cy, step, step);
+        }
+    }
+    resources.forEach(r => {
+        let sx=r.x-cx, sy=r.y-cy;
+        if(r.t==='wood') { ctx.fillStyle='#5c3a1e'; ctx.fillRect(sx-4,sy,8,22); ctx.fillStyle='#2d6a1e'; ctx.beginPath(); ctx.arc(sx,sy-8,14,0,Math.PI*2); ctx.fill(); }
+        else { ctx.fillStyle='#6b7280'; ctx.beginPath(); ctx.ellipse(sx,sy+5,14,10,0,0,Math.PI*2); ctx.fill(); }
+    });
+    animals.forEach(a => {
+        if(a.t==='tiger') drawTiger(a.x-cx, a.y-cy);
+        else drawGiraffe(a.x-cx, a.y-cy);
+    });
+    for(let nick in otherPlayers) {
+        const op = otherPlayers[nick];
+        ctx.fillStyle = op.color; ctx.fillRect(op.x-cx-6, op.y-cy-6, 12, 12);
+        ctx.fillStyle='white'; ctx.font='10px sans-serif'; ctx.fillText(nick, op.x-cx-10, op.y-cy-12);
+    }
+    // персонаж
+    const legSwing = mv ? Math.sin(legPhase)*8 : 0;
+    ctx.save(); ctx.translate(canvas.width/2, canvas.height/2-10+Math.sin(breathPhase)*1.5);
+    ctx.fillStyle=playerColor;
+    ctx.fillRect(-6,8,6,12+Math.abs(legSwing)*0.5); ctx.fillRect(0,8,6,12-Math.abs(legSwing)*0.5);
+    ctx.fillRect(-8,-8,16,16); ctx.fillRect(-14,-6,6,12); ctx.fillRect(8,-6,6,12);
+    ctx.beginPath(); ctx.arc(0,-12,8,0,Math.PI*2); ctx.fill();
+    ctx.fillStyle='white'; ctx.beginPath(); ctx.arc(-3,-14,2,0,Math.PI*2); ctx.fill(); ctx.beginPath(); ctx.arc(3,-14,2,0,Math.PI*2); ctx.fill();
+    ctx.fillStyle='black'; ctx.beginPath(); ctx.arc(-3,-14,1,0,Math.PI*2); ctx.fill(); ctx.beginPath(); ctx.arc(3,-14,1,0,Math.PI*2); ctx.fill();
+    ctx.restore();
+    ctx.fillStyle='white'; ctx.font='12px sans-serif'; ctx.textAlign='center'; ctx.fillText(playerName, canvas.width/2, canvas.height/2-30);
+    // ночь
+    ctx.fillStyle = `rgba(0,0,30,${night*0.4})`;
+    if(player.inv.torch>0) {
+        const g=ctx.createRadialGradient(canvas.width/2,canvas.height/2,40,canvas.width/2,canvas.height/2,200);
+        g.addColorStop(0,'transparent'); g.addColorStop(1,`rgba(0,0,30,${night*0.4})`);
+        ctx.fillStyle=g;
+    }
+    ctx.fillRect(0,0,canvas.width,canvas.height);
+    drawMinimap();
+    updateUI();
+    requestAnimationFrame(loop);
+}
+
+// ========== СТАРТ ==========
+function startGame() {
+    playerMode = document.getElementById('player-mode').value;
+    worldPreset = document.getElementById('biome-preset').value;
+    if (playerMode==='survival') player.mode='survival';
+    else if (playerMode==='creative') player.mode='creative';
+    document.getElementById('setup-screen').style.display='none';
+    document.getElementById('game-area').style.display='block';
+    audioCtx = new (window.AudioContext||window.webkitAudioContext)();
+    checkLocalTracks();
+    document.getElementById('music-upload').addEventListener('change', handleFileUpload);
+    spawnWorld();
+    resize(); updateUI(); loop();
+}
+
+window.onkeydown = e => {
+    if(e.code==='KeyT' && document.activeElement!==cInput) {
+        e.preventDefault(); document.getElementById('console-wrap').style.display='flex'; cInput.focus();
+    }
+    if(e.code==='Enter' && document.activeElement===cInput) {
+        sendChat(cInput.value.trim()); cInput.value='';
+        document.getElementById('console-wrap').style.display='none'; cInput.blur();
+    }
+    keys[e.code] = true;
+};
+window.onkeyup = e => keys[e.code] = false;
+function resize() { canvas.width = document.getElementById('game-area').clientWidth; canvas.height = window.innerHeight; }
+window.onresize = resize;
+
+// Слоты инвентаря
+(function(){
+    const sidebar = document.getElementById('sidebar');
+    const items = ['wood','flax','stone','meat','thread','rope','axe','campfire','fishing_rod','sail','tent','torch','boat'];
+    const icons = { wood:'🌲',flax:'🌿',stone:'🗿',meat:'🥩',thread:'🧵',rope:'🪢',axe:'🪓',campfire:'🔥',fishing_rod:'🎣',sail:'⛵',tent:'🏕️',torch:'🔦',boat:'🚣' };
+    items.forEach(id => {
+        const d=document.createElement('div'); d.className='slot'; d.id='slot-'+id;
+        d.innerHTML=`${icons[id]}<span class="num" id="inv-${id}">0</span>`;
+        sidebar.appendChild(d);
+    });
+})();
+</script>
+</body>
+</html>
